@@ -34,6 +34,7 @@ export interface SuiVerifyConfig {
   rpcUrl: string;
   packageId: string;
   network: 'mainnet' | 'testnet' | 'devnet' | 'localnet';
+  privateKey?: string; // Private key for signing transactions (gas fees)
 }
 
 export interface VerificationOptions {

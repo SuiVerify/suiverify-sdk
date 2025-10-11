@@ -1,82 +1,66 @@
 # SuiVerify SDK
 
-A TypeScript SDK for verifying Nautilus enclave signatures and DID NFT authenticity on the Sui blockchain.
+A TypeScript SDK for verifying Nautilus enclave signatures on the Sui blockchain with real transaction support and gas fee management.
 
 ## Features
 
-- ✅ **DID NFT Verification** - Verify the authenticity of identity NFTs
-- ✅ **Enclave Signature Validation** - Validate Nautilus enclave signatures
-- ✅ **Ownership Verification** - Check NFT ownership
-- ✅ **Batch Operations** - Verify multiple NFTs efficiently
-- ✅ **TypeScript Support** - Full type definitions included
+- **On-chain Signature Verification**: Execute real Sui transactions to verify enclave signatures
+- **Gas Fee Management**: Protocols pay their own gas fees using their private keys
+- **DID NFT Authentication**: Verify authenticity of DID NFTs with Nautilus enclave signatures
+- **Multiple DID Types**: Support for age verification, citizenship verification, and more
+- **Production Ready**: Full integration with Sui blockchain infrastructure
+- **Type Safety**: Complete TypeScript support with proper type definitions
 
 ## Installation
 
 ```bash
-npm install suiverify-sdk
+npm install suiverify-sdk dotenv
 ```
 
 ## Quick Start
 
-```typescript
-import { SuiVerifySDK } from 'suiverify-sdk';
+### 1. Environment Setup
 
-// Initialize SDK
-const sdk = new SuiVerifySDK({
-  network: 'testnet',
-  packageId: '0x...' // Your package ID
-});
-
-// Verify a DID NFT
-const result = await sdk.verifyDIDNFT('0x...', {
-  checkOwnership: true,
-  validateSignature: true
-});
-
-if (result.isValid) {
-  console.log('✅ NFT is authentic!');
-} else {
-  console.log('❌ Verification failed:', result.message);
-}
-```
-
-## API Reference
-
-### SuiVerifySDK
-
-#### Constructor
-
-```typescript
-new SuiVerifySDK(config: SuiVerifyConfig)
-```
-
-#### Methods
-
-- `verifyDIDNFT(nftObjectId, options?)` - Verify a single DID NFT
-- `batchVerifyNFTs(nftObjectIds, options?)` - Verify multiple NFTs
-- `getDIDNFTsByOwner(ownerAddress)` - Get all DID NFTs for an address
-- `verifyEnclaveSignature(signature)` - Verify Nautilus enclave signature
-
-## Examples
-
-See the `examples/` directory for complete usage examples.
-
-## Development
+Create a `.env` file (copy from `.env.example`):
 
 ```bash
-# Install dependencies
-npm install
+# Required: Your Sui private key for transaction signing
+SUI_PRIVATE_KEY=suiprivkey1your_private_key_here
 
-# Build the SDK
-npm run build
+# Optional: Custom RPC URL (defaults to testnet)
+SUI_RPC_URL=https://fullnode.testnet.sui.io
 
-# Run example
-npm run example:basic
-
-# Run tests
-npm test
+# Optional: Custom package ID (defaults to deployed contract)
+SUI_PACKAGE_ID=0x5b1c4450aeb62e2eb6718b8446091045760d5d9a1c2695fbe5a1c20b7d13006d
 ```
 
-## License
+### 2. Basic Usage
 
-MIT
+```typescript
+import { SuiVerifySDK } from 'suiverify-sdk';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const sdk = new SuiVerifySDK({
+  rpcUrl: process.env.SUI_RPC_URL || 'https://fullnode.testnet.sui.io',
+  packageId: process.env.SUI_PACKAGE_ID || '0x5b1c4450aeb62e2eb6718b8446091045760d5d9a1c2695fbe5a1c20b7d13006d',
+  network: 'testnet',
+  privateKey: process.env.SUI_PRIVATE_KEY // Required for gas payments
+});
+
+// Verify a DID NFT on-chain (pays gas fees)
+const result = await sdk.verifyEnclaveSignatureOnChain(
+  enclaveId,
+  intentScope,
+  timestampMs,
+  signedPayload,
+  signature
+);
+
+console.log('Verification result:', result);
+if (result.isValid) {
+  console.log('Signature verified on-chain!');
+  console.log('Transaction:', result.data?.transactionDigest);
+  console.log('Gas used:', result.data?.gasUsed);
+}

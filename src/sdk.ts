@@ -12,38 +12,33 @@ import {
   SDKError
 } from './types';
 
-// Simplified client interface for demonstration
-interface SuiClientInterface {
-  getObject(params: any): Promise<any>;
-  getOwnedObjects(params: any): Promise<any>;
-  devInspectTransactionBlock(params: any): Promise<any>;
-}
+import { SuiClient } from '@mysten/sui/client';
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
+import { Transaction } from '@mysten/sui/transactions';
 
 export class SuiVerifySDK {
-  private client: SuiClientInterface;
+  private client: SuiClient;
   private config: SuiVerifyConfig;
+  private keypair?: Ed25519Keypair;
 
   constructor(config: SuiVerifyConfig) {
     this.config = config;
-    // Initialize with a mock client for now - replace with actual SuiClient when dependencies are installed
-    this.client = this.createMockClient();
-  }
-
-  private createMockClient(): SuiClientInterface {
-    return {
-      async getObject(params: any) {
-        console.log('Mock getObject called with:', params);
-        return { data: null };
-      },
-      async getOwnedObjects(params: any) {
-        console.log('Mock getOwnedObjects called with:', params);
-        return { data: [] };
-      },
-      async devInspectTransactionBlock(params: any) {
-        console.log('Mock devInspectTransactionBlock called with:', params);
-        return { effects: { status: { status: 'success' } }, events: [] };
-      }
-    };
+    
+    // Initialize Sui client
+    this.client = new SuiClient({ url: config.rpcUrl });
+    
+    // Initialize keypair if private key is provided
+    if (config.privateKey) {
+      this.keypair = Ed25519Keypair.fromSecretKey(config.privateKey);
+      console.log('🔑 SDK initialized with signing capability');
+      console.log('📍 Signer address:', this.keypair.getPublicKey().toSuiAddress());
+    } else {
+      console.log('⚠️  SDK initialized without private key - read-only mode');
+      console.log('💡 Provide privateKey in config for transaction signing');
+    }
+    
+    console.log('🌐 Connected to:', config.rpcUrl);
+    console.log('📦 Package ID:', config.packageId);
   }
 
   /**
@@ -99,57 +94,127 @@ export class SuiVerifySDK {
 
   /**
    * Verify Nautilus enclave signature using on-chain contract
+   * Calls the verify_signature function from enclave.move with real transaction and gas fees
    */
   async verifyEnclaveSignatureOnChain(
     enclaveObjectId: string,
     intentScope: number,
     timestampMs: number,
     payload: any,
-    signature: string
+    signature: string | Uint8Array
   ): Promise<VerificationResult> {
     try {
-      console.log('🔍 Calling enclave.move verify_signature function...');
+      // Check if we have signing capability
+      if (!this.keypair) {
+        return {
+          isValid: false,
+          message: '❌ No private key provided - cannot execute transactions. Please provide privateKey in config.'
+        };
+      }
+
+      console.log('🔍 Executing on-chain signature verification...');
+      // Handle signature format for logging
+      const signatureStr = typeof signature === 'string' ? signature : `Uint8Array(${signature.length} bytes)`;
+      
       console.log('Parameters:', {
         enclaveObjectId,
         intentScope,
         timestampMs,
-        payload,
-        signature: signature.substring(0, 20) + '...'
+        payload: typeof payload === 'string' ? payload.substring(0, 100) + '...' : JSON.stringify(payload).substring(0, 100) + '...',
+        signature: typeof signature === 'string' ? signature.substring(0, 20) + '...' : `Uint8Array(${signature.length} bytes)`
       });
 
-      // Prepare transaction parameters for the enclave.move verify_signature call
-      const txParams = {
-        target: `${this.config.packageId}::enclave::verify_signature`,
-        typeArguments: [`${this.config.packageId}::enclave::ENCLAVE`, 'vector<u8>'],
-        arguments: [
-          enclaveObjectId,
-          intentScope,
-          timestampMs,
-          this.encodePayload(payload),
-          this.hexToBytes(signature)
-        ]
+      // Create the intent message structure that matches Move's IntentMessage<T>
+      const intentMessage = {
+        intent: intentScope,
+        timestamp_ms: timestampMs,
+        payload: payload
       };
 
-      // Call the on-chain verification function
-      const tx = await this.client.devInspectTransactionBlock({
-        transactionBlock: txParams,
-        sender: '0x0000000000000000000000000000000000000000000000000000000000000000'
+      console.log('📦 Intent Message Structure:');
+      console.log(JSON.stringify(intentMessage, null, 2));
+
+      // Create transaction block
+      const txb = new Transaction();
+      
+      // Function signature: verify_signature<T, P: drop>(enclave: &Enclave<T>, intent_scope: u8, timestamp_ms: u64, payload: P, signature: &vector<u8>): bool
+      const result = txb.moveCall({
+        target: `${this.config.packageId}::enclave::verify_signature`,
+        typeArguments: [
+          `${this.config.packageId}::enclave::ENCLAVE`,  // T (enclave type)
+          '0x1::string::String'  // P (payload type - using String for text data)
+        ],
+        arguments: [
+          txb.object(enclaveObjectId),        // enclave: &Enclave<T> (immutable reference)
+          txb.pure.u8(intentScope),           // intent_scope: u8
+          txb.pure.u64(timestampMs),          // timestamp_ms: u64
+          txb.pure.string(payload), // payload: String
+          txb.pure(typeof signature === 'string' ? this.hexToBytes(signature) : signature)   // signature: &vector<u8>
+        ]
       });
 
-      // Check if the verification succeeded
-      const isValid = tx.effects?.status?.status === 'success';
+      console.log('🔧 Transaction Details:');
+      console.log('Target:', `${this.config.packageId}::enclave::verify_signature`);
+      console.log('Signer:', this.keypair.getPublicKey().toSuiAddress());
+      console.log('Arguments:', {
+        enclave: enclaveObjectId,
+        intentScope: intentScope,
+        timestampMs: timestampMs,
+        payloadLength: typeof payload === 'string' ? payload.length : this.encodePayload(payload).length,
+        signatureLength: typeof signature === 'string' ? this.hexToBytes(signature).length : signature.length
+      });
+
+      // Execute the transaction with gas payment
+      console.log('💰 Executing transaction (paying gas fees)...');
+      const txResult = await this.client.signAndExecuteTransaction({
+        transaction: txb,
+        signer: this.keypair,
+        options: {
+          showEffects: true,
+          showEvents: true,
+          showObjectChanges: true,
+        }
+      });
+
+      // Check if the transaction succeeded
+      const isValid = txResult.effects?.status?.status === 'success';
+      
+      console.log('📊 Transaction Result:');
+      console.log('Digest:', txResult.digest);
+      console.log('Status:', txResult.effects?.status?.status);
+      console.log('Gas Used:', txResult.effects?.gasUsed);
+      console.log('Events:', txResult.events?.length || 0);
+      
+      if (isValid) {
+        console.log('✅ Transaction executed successfully!');
+        console.log('💸 Gas Cost:', {
+          computationCost: txResult.effects?.gasUsed?.computationCost,
+          storageCost: txResult.effects?.gasUsed?.storageCost,
+          storageRebate: txResult.effects?.gasUsed?.storageRebate
+        });
+      } else {
+        console.log('❌ Transaction failed:', txResult.effects?.status);
+      }
       
       return {
         isValid,
-        message: isValid ? 'Enclave signature verified on-chain' : 'On-chain verification failed',
+        message: isValid ? 
+          'Enclave signature verified on-chain ✅ (Transaction executed with gas payment)' : 
+          `On-chain verification failed ❌: ${txResult.effects?.status?.error || 'Unknown error'}`,
         data: {
-          transactionEffects: tx.effects,
-          events: tx.events,
-          functionCall: `${this.config.packageId}::enclave::verify_signature`
+          transactionDigest: txResult.digest,
+          transactionEffects: txResult.effects,
+          events: txResult.events,
+          objectChanges: txResult.objectChanges,
+          gasUsed: txResult.effects?.gasUsed,
+          functionCall: `${this.config.packageId}::enclave::verify_signature`,
+          intentMessage: intentMessage,
+          signerAddress: this.keypair.getPublicKey().toSuiAddress()
         }
       };
 
     } catch (error) {
+      console.error('❌ On-chain verification error:', error);
       return {
         isValid: false,
         message: `On-chain verification error: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -159,20 +224,27 @@ export class SuiVerifySDK {
 
   /**
    * Helper function to encode payload for Move function call
+   * For DID verification, the payload is a simple string, not JSON
    */
-  private encodePayload(payload: any): number[] {
+  private encodePayload(payload: any): Uint8Array {
+    // If payload is already a string (the signed format), use it directly
+    if (typeof payload === 'string') {
+      return new TextEncoder().encode(payload);
+    }
+    
+    // Otherwise, serialize as JSON (fallback for other use cases)
     const jsonString = JSON.stringify(payload);
-    return Array.from(new TextEncoder().encode(jsonString));
+    return new TextEncoder().encode(jsonString);
   }
 
   /**
    * Helper function to convert hex string to byte array
    */
-  private hexToBytes(hex: string): number[] {
+  private hexToBytes(hex: string): Uint8Array {
     const cleanHex = hex.replace('0x', '');
-    const bytes: number[] = [];
+    const bytes = new Uint8Array(cleanHex.length / 2);
     for (let i = 0; i < cleanHex.length; i += 2) {
-      bytes.push(parseInt(cleanHex.substr(i, 2), 16));
+      bytes[i / 2] = parseInt(cleanHex.substr(i, 2), 16);
     }
     return bytes;
   }
