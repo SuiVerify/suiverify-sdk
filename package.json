@@ -1,7 +1,7 @@
 {
   "name": "suiverify-sdk",
-  "version": "1.0.1",
-  "description": "SuiVerify SDK for verifying Nautilus signatures and DID NFT authenticity",
+  "version": "1.1.0",
+  "description": "Production-ready SDK for on-chain Nautilus enclave signature verification with real Sui transactions and gas fee management",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -22,7 +22,14 @@
     "nft",
     "nautilus",
     "enclave",
-    "did"
+    "did",
+    "cryptography",
+    "signature-verification",
+    "on-chain",
+    "gas-management",
+    "typescript",
+    "web3",
+    "defi"
   ],
   "author": "SuiVerify Team",
   "license": "MIT",
