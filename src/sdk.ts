@@ -149,7 +149,7 @@ export class SuiVerifySDK {
           txb.pure.u8(intentScope),           // intent_scope: u8
           txb.pure.u64(timestampMs),          // timestamp_ms: u64
           txb.pure.string(payload), // payload: String
-          txb.pure(typeof signature === 'string' ? this.hexToBytes(signature) : signature)   // signature: &vector<u8>
+          txb.pure.vector('u8', typeof signature === 'string' ? Array.from(this.hexToBytes(signature)) : Array.from(signature))   // signature: &vector<u8>
         ]
       });
 
