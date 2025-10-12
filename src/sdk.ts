@@ -15,14 +15,17 @@ import {
 import { SuiClient } from '@mysten/sui/client';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Transaction } from '@mysten/sui/transactions';
+import * as configData from '../config.json';
 
 export class SuiVerifySDK {
   private client: SuiClient;
   private config: SuiVerifyConfig;
   private keypair?: Ed25519Keypair;
+  private defaultEnclaveId: string;
 
   constructor(config: SuiVerifyConfig) {
     this.config = config;
+    this.defaultEnclaveId = configData.CURRENT_SUIVERIFY_ENCLAVE_ID;
     
     // Initialize Sui client
     this.client = new SuiClient({ url: config.rpcUrl });
@@ -39,6 +42,7 @@ export class SuiVerifySDK {
     
     console.log('🌐 Connected to:', config.rpcUrl);
     console.log('📦 Package ID:', config.packageId);
+    console.log('🏠 Default Enclave ID:', this.defaultEnclaveId);
   }
 
   /**
@@ -107,8 +111,10 @@ export class SuiVerifySDK {
       // Parse timestamp
       const timestampMs = parseInt(fields.signature_timestamp_ms);
 
-      // Use provided enclave ID or default
-      const enclaveId = enclaveObjectId || '0xb5c1b9dff79454429785285bea9efbf69a0e0a90e330b3a7d4f56c2586dee727';
+      // Use provided enclave ID or get from config
+      const enclaveId = enclaveObjectId || this.defaultEnclaveId;
+      
+      console.log('🔗 Using enclave ID:', enclaveId);
 
       console.log('🚀 Starting on-chain verification...');
 

@@ -1,11 +1,11 @@
 {
   "name": "suiverify-sdk",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Production-ready SDK for on-chain Nautilus enclave signature verification with real Sui transactions and gas fee management",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp config.json dist/",
     "dev": "tsc --watch",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
