@@ -15,7 +15,11 @@ import {
 import { SuiClient } from '@mysten/sui/client';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Transaction } from '@mysten/sui/transactions';
-import * as configData from '../config.json';
+
+// Default configuration - can be overridden in constructor
+const DEFAULT_CONFIG = {
+  CURRENT_SUIVERIFY_ENCLAVE_ID: "0xfd9a67c3a9fc9959408d74d3d0b4b2642a8350047ab01d409ddc685be2cd2376"
+};
 
 export class SuiVerifySDK {
   private client: SuiClient;
@@ -25,7 +29,7 @@ export class SuiVerifySDK {
 
   constructor(config: SuiVerifyConfig) {
     this.config = config;
-    this.defaultEnclaveId = configData.CURRENT_SUIVERIFY_ENCLAVE_ID;
+    this.defaultEnclaveId = DEFAULT_CONFIG.CURRENT_SUIVERIFY_ENCLAVE_ID;
     
     // Initialize Sui client
     this.client = new SuiClient({ url: config.rpcUrl });
