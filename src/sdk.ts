@@ -42,53 +42,170 @@ export class SuiVerifySDK {
   }
 
   /**
-   * Verify a DID NFT's authenticity and Nautilus enclave signature
+   * Verify a DID NFT by fetching its metadata dynamically and verifying the enclave signature
+   * This is the main method for frontend integration - just pass the NFT object ID
    */
   async verifyDIDNFT(
     nftObjectId: string,
-    options: VerificationOptions = {}
+    enclaveObjectId?: string
   ): Promise<VerificationResult> {
     try {
-      // Get NFT object from Sui
+      console.log('🔍 Fetching NFT metadata for verification...');
+      console.log('NFT Object ID:', nftObjectId);
+
+      // Fetch the NFT object from Sui
       const nftObject = await this.client.getObject({
         id: nftObjectId,
-        options: {
-          showContent: true,
-          showOwner: true,
-          showType: true
-        }
+        options: { showContent: true, showType: true }
       });
 
       if (!nftObject.data) {
         return {
           isValid: false,
-          message: 'NFT not found'
+          message: '❌ NFT object not found or not accessible'
         };
       }
 
-      // Extract verification data
-      const verificationData = this.extractVerificationData(nftObject.data);
+      // Validate it's a DID NFT
+      const objectType = nftObject.data.type;
+      if (!objectType?.includes('DIDSoulBoundNFT')) {
+        return {
+          isValid: false,
+          message: '❌ Object is not a DID SoulBound NFT'
+        };
+      }
+
+      // Extract fields from the NFT
+      const content = nftObject.data.content as any;
+      if (!content?.fields) {
+        return {
+          isValid: false,
+          message: '❌ NFT content or fields not found'
+        };
+      }
+
+      const fields = content.fields;
       
-      // Perform verifications
-      const results = await Promise.all([
-        this.verifyEnclaveSignature(verificationData.enclaveSignature),
-        this.verifyNFTMetadata(verificationData.metadata),
-        options.checkOwnership ? this.verifyOwnership(verificationData) : Promise.resolve(true)
-      ]);
+      // Validate required fields exist
+      if (!fields.nautilus_signature || !fields.signature_timestamp_ms || !fields.owner) {
+        return {
+          isValid: false,
+          message: '❌ Required signature fields missing from NFT'
+        };
+      }
 
-      const isValid = results.every(result => result === true);
+      console.log('✅ NFT metadata fetched successfully');
+      console.log('Owner:', fields.owner);
+      console.log('Description:', fields.description);
 
-      return {
-        isValid,
-        message: isValid ? 'NFT verification successful' : 'NFT verification failed',
-        data: verificationData
-      };
+      // Reconstruct the signed payload
+      const signedPayload = this.reconstructPayload(nftObject.data);
+      
+      // Decode the signature
+      const decodedSignature = this.decodeSignature(fields.nautilus_signature);
+      
+      // Parse timestamp
+      const timestampMs = parseInt(fields.signature_timestamp_ms);
+
+      // Use provided enclave ID or default
+      const enclaveId = enclaveObjectId || '0xb5c1b9dff79454429785285bea9efbf69a0e0a90e330b3a7d4f56c2586dee727';
+
+      console.log('🚀 Starting on-chain verification...');
+
+      // Call the on-chain verification
+      return await this.verifyEnclaveSignatureOnChain(
+        enclaveId,
+        1, // Intent scope for DID verification
+        timestampMs,
+        signedPayload,
+        decodedSignature
+      );
 
     } catch (error) {
+      console.error('❌ DID NFT verification error:', error);
       return {
         isValid: false,
-        message: `Verification error: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `DID NFT verification error: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
+    }
+  }
+
+  /**
+   * Get all DID NFTs owned by a specific address
+   * Useful for frontend to show user's DID NFTs
+   */
+  async getUserDIDNFTs(ownerAddress: string): Promise<Array<{
+    objectId: string;
+    type: string;
+    fields: any;
+  }>> {
+    try {
+      console.log('🔍 Fetching DID NFTs for address:', ownerAddress);
+
+      const objects = await this.client.getOwnedObjects({
+        owner: ownerAddress,
+        options: { showContent: true, showType: true },
+        filter: {
+          StructType: '0x6ec40d30e636afb906e621748ee60a9b72bc59a39325adda43deadd28dc89e09::did_registry::DIDSoulBoundNFT'
+        }
+      });
+
+      const didNFTs = objects.data
+        .filter(obj => obj.data?.content)
+        .map(obj => ({
+          objectId: obj.data!.objectId,
+          type: obj.data!.type!,
+          fields: (obj.data!.content as any)?.fields || {}
+        }));
+
+      console.log(`✅ Found ${didNFTs.length} DID NFTs`);
+      return didNFTs;
+
+    } catch (error) {
+      console.error('❌ Error fetching user DID NFTs:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Reconstruct the signed payload from NFT data
+   * Private helper method
+   */
+  private reconstructPayload(nftData: any): string {
+    const fields = nftData.content?.fields;
+    if (!fields) {
+      throw new Error('NFT fields not found');
+    }
+
+    // Reconstruct the original signed format: owner:did_id:result:evidence_hash:verified_at
+    const owner = fields.owner;
+    const didId = fields.did_id || '1'; // Default DID ID
+    const result = 'verified'; // Status from verification
+    const evidenceHash = fields.evidence_hash || '';
+    const verifiedAt = fields.verified_at || new Date(parseInt(fields.signature_timestamp_ms)).toISOString();
+
+    return `${owner}:${didId}:${result}:${evidenceHash}:${verifiedAt}`;
+  }
+
+  /**
+   * Decode base64 signature from NFT to Ed25519 bytes
+   * Private helper method
+   */
+  private decodeSignature(signatureBytes: number[]): Uint8Array {
+    // Convert byte array to base64 string
+    const base64String = String.fromCharCode(...signatureBytes);
+    
+    // Decode base64 to get actual Ed25519 signature
+    if (typeof Buffer !== 'undefined') {
+      return Buffer.from(base64String, 'base64');
+    } else {
+      // Browser fallback
+      const binaryString = atob(base64String);
+      const signature = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        signature[i] = binaryString.charCodeAt(i);
+      }
+      return signature;
     }
   }
 
@@ -354,10 +471,10 @@ export class SuiVerifySDK {
    */
   async batchVerifyNFTs(
     nftObjectIds: string[],
-    options: VerificationOptions = {}
+    enclaveObjectId?: string
   ): Promise<VerificationResult[]> {
     const results = await Promise.all(
-      nftObjectIds.map(id => this.verifyDIDNFT(id, options))
+      nftObjectIds.map(id => this.verifyDIDNFT(id, enclaveObjectId))
     );
     return results;
   }

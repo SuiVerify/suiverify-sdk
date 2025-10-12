@@ -1,6 +1,6 @@
 {
   "name": "suiverify-sdk",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Production-ready SDK for on-chain Nautilus enclave signature verification with real Sui transactions and gas fee management",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,6 +12,7 @@
     "prepare": "npm run build",
     "example:basic": "tsx examples/basic-usage.ts",
     "example:verify": "tsx examples/verify-nft-signature.ts",
+    "example:frontend": "tsx examples/frontend-integration.ts",
     "clean": "rm -rf dist"
   },
   "keywords": [
