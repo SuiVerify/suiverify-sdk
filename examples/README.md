@@ -1,30 +1,23 @@
 # SuiVerify SDK Examples
 
-This directory contains example scripts demonstrating how to use the SuiVerify SDK.
+This directory contains a complete example showing how to use the SuiVerify SDK for frontend integration.
 
-## NFT Signature Verification Example
+## Available Example
 
-The `verify-nft-signature.ts` script demonstrates how to verify an enclave signature from a DID NFT using the on-chain `verify_signature` function.
+### Frontend Integration (`frontend-integration.ts`)
+- **Complete workflow**: User NFT discovery → selection → verification
+- **One-line verification**: `sdk.verifyDIDNFT(objectId)`
+- **Dynamic metadata fetching**: No manual payload reconstruction needed
+- **Real transaction execution**: On-chain verification with gas payment
+- **Production-ready patterns**: Error handling, gas management, type safety
 
-### What it does:
+## Running the Example
 
-1. **Reconstructs the payload** that was originally signed by the enclave
-2. **Extracts the signature** from the NFT metadata 
-3. **Calls the on-chain verification** using the registered enclave
-4. **Validates the signature** against the reconstructed payload
-
-### Key Components:
-
-- **Payload Reconstruction**: Rebuilds the exact data structure that was signed
-- **Intent Message**: Creates the proper intent message format with scope and timestamp
-- **On-chain Verification**: Calls `enclave::verify_signature` function on Sui
-- **Signature Analysis**: Analyzes signature format and encoding
-
-### Running the Example:
+Make sure you have set up your environment first:
 
 ```bash
-# Install dependencies
-npm install
+# Copy environment template
+cp .env.example .env
 
 # Run the verification example
 npm run example:verify

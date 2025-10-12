@@ -10,9 +10,7 @@
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "prepare": "npm run build",
-    "example:basic": "tsx examples/basic-usage.ts",
-    "example:verify": "tsx examples/verify-nft-signature.ts",
-    "example:frontend": "tsx examples/frontend-integration.ts",
+    "example": "tsx examples/frontend-integration.ts",
     "clean": "rm -rf dist"
   },
   "keywords": [

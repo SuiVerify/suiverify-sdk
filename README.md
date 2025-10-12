@@ -113,14 +113,8 @@ Run the complete examples:
 cp .env.example .env
 # Edit .env with your private key
 
-# Run frontend integration example (recommended)
-npm run example:frontend
-
-# Run NFT signature verification example
-npm run example:verify
-
-# Run basic usage example  
-npm run example:basic
+# Run the complete example
+npm run example
 ```
 
 ## 🚀 Key Features
