@@ -71,16 +71,16 @@ const fields = nftObject.data.content.fields;
 
 ```typescript
 // Reconstruct the exact payload that was signed by the enclave
-const payload = {
-  blob_id: fields.blob_id,
-  description: fields.description,
-  did_type: fields.did_type,
-  evidence_hash: fields.evidence_hash,
-  expiry_epoch: parseInt(fields.expiry_epoch),
-  name: fields.name,
-  owner: fields.owner,
-  minted_at: parseInt(fields.minted_at)
-};
+// Format: owner:did_type:result:evidence_hash:verified_at
+const owner = fields.owner;
+const didType = fields.did_type;
+const result = 'verified'; // Always 'verified' for minted NFTs
+const evidenceHash = Array.isArray(fields.evidence_hash) 
+  ? '0x' + fields.evidence_hash.map(b => b.toString(16).padStart(2, '0')).join('')
+  : fields.evidence_hash.toString();
+const verifiedAt = new Date(parseInt(fields.signature_timestamp_ms)).toISOString();
+
+const payload = `${owner}:${didType}:${result}:${evidenceHash}:${verifiedAt}`;
 ```
 
 ### Step 3: Execute On-Chain Verification

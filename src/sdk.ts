@@ -18,7 +18,7 @@ import { Transaction } from '@mysten/sui/transactions';
 
 // Default configuration - can be overridden in constructor
 const DEFAULT_CONFIG = {
-  CURRENT_SUIVERIFY_ENCLAVE_ID: "0xfd9a67c3a9fc9959408d74d3d0b4b2642a8350047ab01d409ddc685be2cd2376"
+  CURRENT_SUIVERIFY_ENCLAVE_ID: "0x07ed316d51a61da1e4628b9789eda4623ba28f4b2b455dd06b3e9d0fc2e6aab0"
 };
 
 export class SuiVerifySDK {
@@ -187,12 +187,24 @@ export class SuiVerifySDK {
       throw new Error('NFT fields not found');
     }
 
-    // Reconstruct the original signed format: owner:did_id:result:evidence_hash:verified_at
+    // Reconstruct the original signed format: owner:did_type:result:evidence_hash:verified_at
     const owner = fields.owner;
-    const didId = fields.did_id || '1'; // Default DID ID
-    const result = 'verified'; // Status from verification
-    const evidenceHash = fields.evidence_hash || '';
-    const verifiedAt = fields.verified_at || new Date(parseInt(fields.signature_timestamp_ms)).toISOString();
+    const didId = fields.did_type || '1'; // Use did_type from NFT (matches contract)
+    const result = 'verified'; // Always 'verified' for minted NFTs
+    
+    // Convert evidence_hash from vector<u8> to hex string if needed
+    let evidenceHash = '';
+    if (fields.evidence_hash) {
+      if (Array.isArray(fields.evidence_hash)) {
+        // Convert byte array to hex string
+        evidenceHash = '0x' + fields.evidence_hash.map((b: number) => b.toString(16).padStart(2, '0')).join('');
+      } else {
+        evidenceHash = fields.evidence_hash.toString();
+      }
+    }
+    
+    // Use signature_timestamp_ms which contains the original verification timestamp
+    const verifiedAt = new Date(parseInt(fields.signature_timestamp_ms)).toISOString();
 
     return `${owner}:${didId}:${result}:${evidenceHash}:${verifiedAt}`;
   }
