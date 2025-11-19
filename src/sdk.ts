@@ -18,7 +18,7 @@ import { Transaction } from '@mysten/sui/transactions';
 
 // Default configuration - can be overridden in constructor
 const DEFAULT_CONFIG = {
-  CURRENT_SUIVERIFY_ENCLAVE_ID: "0x4b8e33ce5e80e03ac2e81d6f803c09bf7e7776ae8d8abdc47047d1784136d500"
+  CURRENT_SUIVERIFY_ENCLAVE_ID: "0x7e5dfe2967b582da15e89cd9a35d3448d928cd2913ebc308b179a320318f9b5d"
 };
 
 export class SuiVerifySDK {
