@@ -100,70 +100,94 @@ export function VerifyButton() {
 
 ## 4. Handle the callback on your backend
 
-After verification (or instant reuse), the user is redirected to your
-`redirect_uri` with these query params:
+After verification the user lands on your `redirect_uri` with these query params:
 
-| Param      | When                | Notes                                                  |
-| ---------- | ------------------- | ------------------------------------------------------ |
-| `status`   | always              | `success` or `error`.                                  |
-| `state`    | always              | Echo of the `state` you sent. Validate against session.|
-| `nft_id`   | on `success`        | Sui object id of the user's DID NFT.                   |
-| `owner`    | on `success`        | Sui address that owns the NFT.                         |
-| `reason`   | on `error`          | Short error code (e.g. `user_cancelled`).              |
+| Param      | When         | Notes                                                   |
+| ---------- | ------------ | ------------------------------------------------------- |
+| `status`   | always       | `success` or `error`.                                   |
+| `state`    | always       | Echo of the `state` you sent. Validate against session. |
+| `nft_id`   | on `success` | Sui object id of the user's DID NFT.                    |
+| `owner`    | on `success` | Sui address that owns the NFT.                          |
+| `is_new`   | on `success` | `"true"` if NFT was just minted, `"false"` if reused.  |
+| `reason`   | on `error`   | Short error code (e.g. `user_cancelled`).               |
 
-Verify the NFT on-chain via the SDK:
+There are two verification paths depending on `is_new`:
+
+### Path A — New mint (`is_new=true`)
+
+The user just completed KYC and the NFT was minted during this session.
+SuiVerify's backend confirmed the mint; your callback only needs to confirm
+the object exists on-chain and is the right type:
 
 ```ts
-// pages/api/verify/callback.ts (Next.js example — adapt to Express, etc.)
-import { SuiVerifySDK } from 'suiverify-sdk';
+// pages/api/verify/callback.ts
+import { SuiClient } from '@mysten/sui/client';
 
-const sdk = new SuiVerifySDK({
-  rpcUrl: 'https://fullnode.testnet.sui.io',
-  packageId: '0x6ec40d30e636afb906e621748ee60a9b72bc59a39325adda43deadd28dc89e09',
-  network: 'testnet',
-});
+const suiClient = new SuiClient({ url: 'https://fullnode.mainnet.sui.io' });
 
 export default async function handler(req, res) {
-  const { status, state, nft_id, owner, reason } = req.query;
+  const { status, state, nft_id, owner, is_new, reason } = req.query;
 
-  if (status !== 'success') {
-    return res.redirect(`/verify-failed?reason=${reason}`);
+  if (status !== 'success') return res.redirect(`/verify-failed?reason=${reason}`);
+
+  // 1. CSRF check
+  if (state !== session(req).suiverifyState) return res.status(400).send('invalid state');
+
+  if (is_new === 'true') {
+    // Confirm NFT object exists and is a DIDSoulBoundNFT (read-only, no gas)
+    const obj = await suiClient.getObject({ id: nft_id, options: { showType: true } });
+    if (!obj.data?.type?.includes('DIDSoulBoundNFT')) {
+      return res.status(403).send('invalid nft');
+    }
+
+    await markUserVerified(session(req).userId, { nftId: nft_id, walletAddress: owner });
+    return res.redirect('/dashboard');
   }
-
-  // 1. CSRF check — this is what `state` is for
-  if (state !== session(req).suiverifyState) {
-    return res.status(400).send('invalid state');
-  }
-
-  // 2. On-chain verification — does NOT trust SuiVerify's API, only Sui
-  const result = await sdk.verifyDIDNFT(nft_id as string);
-  if (!result.isValid) {
-    return res.status(403).send(`NFT not valid: ${result.message}`);
-  }
-
-  // 3. (Recommended) bind owner wallet to your user — see Security below
-  await markUserVerified(session(req).userId, {
-    nftId: nft_id,
-    walletAddress: owner,
-  });
-
-  res.redirect('/dashboard');
 }
 ```
 
+No private key or gas required. The trust anchor is SuiVerify's KYC flow
+plus the NFT's existence on-chain.
+
+### Path B — Reuse (`is_new=false`)
+
+The user already held a valid DID NFT (minted in a previous session, possibly
+for a different partner). Verify the enclave signature on-chain to
+cryptographically confirm the NFT was issued by SuiVerify's enclave:
+
+```ts
+// pages/api/verify/callback.ts (continued)
+import { SuiVerifySDK } from 'suiverify-sdk';
+
+const sdk = new SuiVerifySDK({
+  rpcUrl: 'https://fullnode.mainnet.sui.io',
+  packageId: process.env.SUIVERIFY_PACKAGE_ID!,
+  privateKey: process.env.SUIVERIFY_VERIFIER_PRIVATE_KEY!, // funded Sui wallet for gas
+  network: 'mainnet',
+});
+
+  // ...inside handler, after CSRF check:
+  if (is_new === 'false') {
+    // On-chain enclave signature check — cryptographic proof, no trust in SuiVerify API
+    const result = await sdk.verifyDIDNFT(nft_id as string);
+    if (!result.isValid) return res.status(403).send(`NFT invalid: ${result.message}`);
+
+    await markUserVerified(session(req).userId, { nftId: nft_id, walletAddress: owner });
+    return res.redirect('/dashboard');
+  }
+```
+
+This requires your backend to hold a Sui wallet (`SUIVERIFY_VERIFIER_PRIVATE_KEY`)
+funded with SUI for gas. Set it up once — costs are minimal (a few MIST per call).
+
 ---
 
-## 5. Reuse semantics — what users experience
+## 5. Verification path summary
 
-- **First time** in the SuiVerify network: full KYC flow at `app.suiverify.xyz`
-  (a few minutes), then redirected to your `redirect_uri` with the new NFT.
-- **Already verified** (same wallet, valid NFT) — even if the previous
-  verification was for a different SuiVerify partner: SuiVerify detects the
-  existing NFT, records the event for billing, and redirects back to your
-  `redirect_uri` immediately. No KYC step.
-
-You don't need to do anything different — both cases hit the same callback
-shape. Use the `nft_id` returned and verify it.
+| Scenario | `is_new` | What partner does | Gas needed |
+| -------- | -------- | ----------------- | ---------- |
+| First-time KYC, NFT just minted | `true` | `getObject` type check (read-only) | No |
+| Returning user, NFT already existed | `false` | `sdk.verifyDIDNFT` (on-chain sig check) | Yes (tiny) |
 
 ---
 
