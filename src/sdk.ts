@@ -37,16 +37,11 @@ export class SuiVerifySDK {
     // Initialize keypair if private key is provided
     if (config.privateKey) {
       this.keypair = Ed25519Keypair.fromSecretKey(config.privateKey);
-      console.log('🔑 SDK initialized with signing capability');
-      console.log('📍 Signer address:', this.keypair.getPublicKey().toSuiAddress());
+
     } else {
-      console.log('⚠️  SDK initialized without private key - read-only mode');
-      console.log('💡 Provide privateKey in config for transaction signing');
+
     }
-    
-    console.log('🌐 Connected to:', config.rpcUrl);
-    console.log('📦 Package ID:', config.packageId);
-    console.log('🏠 Default Enclave ID:', this.defaultEnclaveId);
+
   }
 
   /**
@@ -58,8 +53,6 @@ export class SuiVerifySDK {
     enclaveObjectId?: string
   ): Promise<VerificationResult> {
     try {
-      console.log('🔍 Fetching NFT metadata for verification...');
-      console.log('NFT Object ID:', nftObjectId);
 
       // Fetch the NFT object from Sui
       const nftObject = await this.client.getObject({
@@ -70,7 +63,7 @@ export class SuiVerifySDK {
       if (!nftObject.data) {
         return {
           isValid: false,
-          message: '❌ NFT object not found or not accessible'
+          message: 'NFT object not found or not accessible'
         };
       }
 
@@ -79,7 +72,7 @@ export class SuiVerifySDK {
       if (!objectType?.includes('DIDSoulBoundNFT')) {
         return {
           isValid: false,
-          message: '❌ Object is not a DID SoulBound NFT'
+          message: 'Object is not a DID SoulBound NFT'
         };
       }
 
@@ -88,7 +81,7 @@ export class SuiVerifySDK {
       if (!content?.fields) {
         return {
           isValid: false,
-          message: '❌ NFT content or fields not found'
+          message: 'NFT content or fields not found'
         };
       }
 
@@ -98,13 +91,9 @@ export class SuiVerifySDK {
       if (!fields.nautilus_signature || !fields.signature_timestamp_ms || !fields.owner) {
         return {
           isValid: false,
-          message: '❌ Required signature fields missing from NFT'
+          message: 'Required signature fields missing from NFT'
         };
       }
-
-      console.log('✅ NFT metadata fetched successfully');
-      console.log('Owner:', fields.owner);
-      console.log('Description:', fields.description);
 
       // Reconstruct the signed payload
       const signedPayload = this.reconstructPayload(nftObject.data);
@@ -117,10 +106,6 @@ export class SuiVerifySDK {
 
       // Use provided enclave ID or get from config
       const enclaveId = enclaveObjectId || this.defaultEnclaveId;
-      
-      console.log('🔗 Using enclave ID:', enclaveId);
-
-      console.log('🚀 Starting on-chain verification...');
 
       // Call the on-chain verification
       return await this.verifyEnclaveSignatureOnChain(
@@ -132,7 +117,7 @@ export class SuiVerifySDK {
       );
 
     } catch (error) {
-      console.error('❌ DID NFT verification error:', error);
+      console.error(' DID NFT verification error:', error);
       return {
         isValid: false,
         message: `DID NFT verification error: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -150,7 +135,6 @@ export class SuiVerifySDK {
     fields: any;
   }>> {
     try {
-      console.log('🔍 Fetching DID NFTs for address:', ownerAddress);
 
       const objects = await this.client.getOwnedObjects({
         owner: ownerAddress,
@@ -167,12 +151,10 @@ export class SuiVerifySDK {
           type: obj.data!.type!,
           fields: (obj.data!.content as any)?.fields || {}
         }));
-
-      console.log(`✅ Found ${didNFTs.length} DID NFTs`);
       return didNFTs;
 
     } catch (error) {
-      console.error('❌ Error fetching user DID NFTs:', error);
+      console.error(' Error fetching user DID NFTs:', error);
       return [];
     }
   }
@@ -247,21 +229,11 @@ export class SuiVerifySDK {
       if (!this.keypair) {
         return {
           isValid: false,
-          message: '❌ No private key provided - cannot execute transactions. Please provide privateKey in config.'
+          message: 'No private key provided - cannot execute transactions. Please provide privateKey in config.'
         };
       }
-
-      console.log('🔍 Executing on-chain signature verification...');
       // Handle signature format for logging
       const signatureStr = typeof signature === 'string' ? signature : `Uint8Array(${signature.length} bytes)`;
-      
-      console.log('Parameters:', {
-        enclaveObjectId,
-        intentScope,
-        timestampMs,
-        payload: typeof payload === 'string' ? payload.substring(0, 100) + '...' : JSON.stringify(payload).substring(0, 100) + '...',
-        signature: typeof signature === 'string' ? signature.substring(0, 20) + '...' : `Uint8Array(${signature.length} bytes)`
-      });
 
       // Create the intent message structure that matches Move's IntentMessage<T>
       const intentMessage = {
@@ -269,9 +241,6 @@ export class SuiVerifySDK {
         timestamp_ms: timestampMs,
         payload: payload
       };
-
-      console.log('📦 Intent Message Structure:');
-      console.log(JSON.stringify(intentMessage, null, 2));
 
       // Create transaction block
       const txb = new Transaction();
@@ -292,19 +261,7 @@ export class SuiVerifySDK {
         ]
       });
 
-      console.log('🔧 Transaction Details:');
-      console.log('Target:', `${this.config.packageId}::enclave::verify_signature`);
-      console.log('Signer:', this.keypair.getPublicKey().toSuiAddress());
-      console.log('Arguments:', {
-        enclave: enclaveObjectId,
-        intentScope: intentScope,
-        timestampMs: timestampMs,
-        payloadLength: typeof payload === 'string' ? payload.length : this.encodePayload(payload).length,
-        signatureLength: typeof signature === 'string' ? this.hexToBytes(signature).length : signature.length
-      });
-
       // Execute the transaction with gas payment
-      console.log('💰 Executing transaction (paying gas fees)...');
       const txResult = await this.client.signAndExecuteTransaction({
         transaction: txb,
         signer: this.keypair,
@@ -317,29 +274,18 @@ export class SuiVerifySDK {
 
       // Check if the transaction succeeded
       const isValid = txResult.effects?.status?.status === 'success';
-      
-      console.log('📊 Transaction Result:');
-      console.log('Digest:', txResult.digest);
-      console.log('Status:', txResult.effects?.status?.status);
-      console.log('Gas Used:', txResult.effects?.gasUsed);
-      console.log('Events:', txResult.events?.length || 0);
+
       
       if (isValid) {
-        console.log('✅ Transaction executed successfully!');
-        console.log('💸 Gas Cost:', {
-          computationCost: txResult.effects?.gasUsed?.computationCost,
-          storageCost: txResult.effects?.gasUsed?.storageCost,
-          storageRebate: txResult.effects?.gasUsed?.storageRebate
-        });
+
       } else {
-        console.log('❌ Transaction failed:', txResult.effects?.status);
       }
       
       return {
         isValid,
         message: isValid ? 
-          'Enclave signature verified on-chain ✅ (Transaction executed with gas payment)' : 
-          `On-chain verification failed ❌: ${txResult.effects?.status?.error || 'Unknown error'}`,
+          'Enclave signature verified on-chain  (Transaction executed with gas payment)' : 
+          `On-chain verification failed : ${txResult.effects?.status?.error || 'Unknown error'}`,
         data: {
           transactionDigest: txResult.digest,
           transactionEffects: txResult.effects,
@@ -353,7 +299,7 @@ export class SuiVerifySDK {
       };
 
     } catch (error) {
-      console.error('❌ On-chain verification error:', error);
+      console.error(' On-chain verification error:', error);
       return {
         isValid: false,
         message: `On-chain verification error: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -394,12 +340,6 @@ export class SuiVerifySDK {
    */
   async verifyEnclaveSignature(signature: EnclaveSignature): Promise<boolean> {
     try {
-      console.log('🔍 Verifying enclave signature locally...');
-      console.log('Signature data:', {
-        publicKey: signature.publicKey.substring(0, 20) + '...',
-        message: signature.message,
-        signature: signature.signature.substring(0, 20) + '...'
-      });
 
       // For now, return true as a placeholder
       // In production, implement proper Ed25519 signature verification
